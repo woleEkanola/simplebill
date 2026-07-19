@@ -1,35 +1,50 @@
-import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { notFound } from "next/navigation";
+"use client";
+
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
 
-interface InvoiceDetailProps {
-  params: Promise<{ id: string }>;
-}
+export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter();
+  const [id, setId] = useState("");
+  const [invoice, setInvoice] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-export default async function InvoiceDetailPage({ params }: InvoiceDetailProps) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  useEffect(() => {
+    params.then((p) => { setId(p.id); fetchInvoice(p.id); });
+  }, [params]);
 
-  if (!user) {
-    redirect("/login");
+  async function fetchInvoice(invoiceId: string) {
+    const res = await fetch(`/api/invoices/${invoiceId}`);
+    if (res.ok) { setInvoice(await res.json()); }
+    else { router.push("/dashboard/invoices"); }
+    setLoading(false);
   }
 
-  const { id } = await params;
+  async function updateStatus(newStatus: string) {
+    if (!invoice) return;
+    const res = await fetch(`/api/invoices/${invoice.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (res.ok) { toast.success(`Invoice marked as ${newStatus}`); fetchInvoice(invoice.id); }
+    else { toast.error("Failed to update status"); }
+  }
 
-  const { data: invoice, error } = await supabase
-    .from("invoices")
-    .select("*, line_items(*)")
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .single();
+  if (loading) {
+    return <div className="max-w-4xl mx-auto py-12 text-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto" />
+    </div>;
+  }
 
-  if (error || !invoice) {
-    notFound();
+  if (!invoice) {
+    return <div className="max-w-4xl mx-auto py-12 text-center">
+      <p className="text-gray-600">Invoice not found</p>
+    </div>;
   }
 
   const statusColors: Record<string, string> = {
@@ -37,32 +52,6 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailProps) 
     sent: "bg-blue-100 text-blue-800",
     paid: "bg-green-100 text-green-800",
   };
-
-  // Calculate totals from line items
-  const subtotal = invoice.line_items.reduce((sum: number, item: any) => sum + Number(item.quantity) * Number(item.price), 0);
-  const taxAmount = subtotal * Number(invoice.tax_rate) / 100;
-  const totalAmount = subtotal + taxAmount;
-
-  async function updateStatus(invoiceId: string, status: string) {
-    const res = await fetch(`/api/invoices/${invoiceId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    if (res.ok) window.location.reload();
-  }
-
-  async function downloadPDF(invoiceData: any) {
-    const res = await fetch(`/api/invoices/${invoiceData.id}/pdf`);
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `invoice-${invoiceData.invoice_number}.pdf`;
-      a.click();
-    }
-  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -72,31 +61,18 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailProps) 
           <p className="text-gray-600">View and manage this invoice</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled={invoice.status === "paid"} onClick={() => updateStatus(id, "paid")}>
+          <Button variant="outline" disabled={invoice.status === "paid"} onClick={() => updateStatus("paid")}>
             Mark as Paid
           </Button>
-          <Button variant="outline" disabled={invoice.status !== "draft"} onClick={() => updateStatus(id, "sent")}>
+          <Button variant="outline" disabled={invoice.status !== "draft"} onClick={() => updateStatus("sent")}>
             Send Invoice
           </Button>
-          <Button onClick={() => downloadPDF(invoice)}>Download PDF</Button>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
-          <CardHeader>
-            <CardTitle>From</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="font-semibold">Your Business</p>
-            <p className="text-gray-600 text-sm">Configure in Profile</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Bill To</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Bill To</CardTitle></CardHeader>
           <CardContent>
             <p className="font-semibold">{invoice.client_name}</p>
             <p className="text-gray-600 text-sm">{invoice.client_email}</p>
@@ -105,9 +81,7 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailProps) 
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Invoice Details</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Invoice Details</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <div className="flex justify-between">
               <span className="text-gray-600">Issue Date</span>
@@ -129,59 +103,52 @@ export default async function InvoiceDetailPage({ params }: InvoiceDetailProps) 
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Payment</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-gray-600 text-sm">Payment integration coming in Phase 3</p>
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Line Items</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle>Line Items</CardTitle></CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b text-left text-sm text-gray-600">
-                  <th className="pb-2 w-1/2">Description</th>
-                  <th className="pb-2 w-1/6 text-right">Qty</th>
-                  <th className="pb-2 w-1/6 text-right">Price</th>
-                  <th className="pb-2 w-1/6 text-right">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoice.line_items.map((item: any) => (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-3">{item.description}</td>
-                    <td className="py-3 text-right">{item.quantity}</td>
-                    <td className="py-3 text-right">${Number(item.price).toFixed(2)}</td>
-                    <td className="py-3 text-right font-medium">${(Number(item.quantity) * Number(item.price)).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t">
-                <tr>
-                  <td colSpan={3} className="py-3 text-right font-medium">Subtotal</td>
-                  <td className="py-3 text-right font-medium">${subtotal.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td colSpan={3} className="py-3 text-right font-medium">Tax ({invoice.tax_rate}%)</td>
-                  <td className="py-3 text-right font-medium">${taxAmount.toFixed(2)}</td>
-                </tr>
-                <tr>
-                  <td colSpan={3} className="py-3 text-right font-bold text-lg">Total</td>
-                  <td className="py-3 text-right font-bold text-lg">${totalAmount.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
+          <div className="space-y-2">
+            {invoice.line_items.map((item: any) => (
+              <div key={item.id} className="flex justify-between items-center py-2 border-b last:border-0">
+                <div className="flex-1">
+                  <p className="font-medium">{item.description}</p>
+                  <p className="text-sm text-gray-600">{item.quantity} x ${Number(item.price).toFixed(2)}</p>
+                </div>
+                <div className="text-right font-medium">
+                  ${(Number(item.quantity) * Number(item.price)).toFixed(2)}
+                </div>
+              </div>
+            ))}
           </div>
-        </Card>
+          <div className="mt-6 space-y-2 border-t pt-4">
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Subtotal</span>
+              <span className="font-medium">${Number(invoice.subtotal).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-gray-600">Tax ({invoice.tax_rate}%)</span>
+              <span className="font-medium">${Number(invoice.tax_amount).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-lg font-bold border-t pt-2">
+              <span>Total</span>
+              <span>${Number(invoice.total_amount).toFixed(2)}</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Actions</CardTitle></CardHeader>
+        <CardContent className="flex gap-2">
+          <Button variant="outline" onClick={() => { if (invoice.status !== "paid") updateStatus("paid"); }} disabled={invoice.status === "paid"}>
+            Mark as Paid
+          </Button>
+          <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${invoice.id}/edit`)}>
+            Edit Invoice
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

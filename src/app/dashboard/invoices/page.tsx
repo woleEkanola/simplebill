@@ -34,9 +34,9 @@ export default async function InvoicesPage() {
           <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
           <p className="text-gray-600">Manage your invoices</p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/invoices/new">Create Invoice</Link>
-        </Button>
+        <Link href="/dashboard/invoices/new">
+          <Button>Create Invoice</Button>
+        </Link>
       </div>
 
       {invoices && invoices.length > 0 ? (
@@ -73,9 +73,9 @@ export default async function InvoicesPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-gray-600 mb-4">No invoices yet</p>
-            <Button asChild>
-              <Link href="/dashboard/invoices/new">Create your first invoice</Link>
-            </Button>
+            <Link href="/dashboard/invoices/new">
+              <Button>Create your first invoice</Button>
+            </Link>
           </CardContent>
         </Card>
       )}
